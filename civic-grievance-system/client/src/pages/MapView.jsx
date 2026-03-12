@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { FiNavigation, FiRefreshCw, FiMapPin, FiFilter, FiInfo, FiList, FiMap, FiPlusCircle, FiRadio } from 'react-icons/fi';
+import { FiNavigation, FiRefreshCw, FiMapPin, FiFilter, FiInfo, FiList, FiMap, FiPlusCircle, FiCheckCircle } from 'react-icons/fi';
 
 // Fix Leaflet default icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -34,29 +34,42 @@ const CATEGORY_EMOJI = {
 };
 
 
-function FlyTo({ position }) {
+function FlyTo({ position, zoom = 14 }) {
   const map = useMap();
   useEffect(() => {
-    if (position) map.flyTo(position, 14, { duration: 1.2 });
-  }, [position, map]);
+    if (position) map.flyTo(position, zoom, { duration: 1.5 });
+  }, [position, zoom, map]);
   return null;
 }
 
-function RecenterButton({ userLocation, onLocate }) {
-  return (
-    <button
-      onClick={onLocate}
-      title="My Location"
-      className="bg-white shadow-md hover:bg-gray-50 border border-gray-200 px-3 py-2 rounded-lg text-sm font-medium text-indigo-600 flex items-center gap-1.5 transition-colors"
-    >
-      <FiNavigation size={15} />
-      My Location
-    </button>
-  );
+// Pulsing CSS-based Leaflet icon for newly-submitted marker
+function makePulseIcon(color = '#3b82f6') {
+  return L.divIcon({
+    className: '',
+    iconAnchor: [18, 18],
+    html: `
+      <div style="position:relative;width:36px;height:36px;">
+        <div style="position:absolute;inset:0;border-radius:50%;background:${color};opacity:.25;
+          animation:pulse-ring 1.4s ease-out infinite;"></div>
+        <div style="position:absolute;inset:6px;border-radius:50%;background:${color};border:3px solid white;
+          box-shadow:0 0 0 2px ${color};"></div>
+      </div>
+      <style>
+        @keyframes pulse-ring{
+          0%{transform:scale(1);opacity:.4}
+          80%,100%{transform:scale(2.4);opacity:0}
+        }
+      </style>`,
+  });
 }
 
 export default function MapView() {
   const navigate = useNavigate();
+  const { state: navState } = useLocation();
+  // navState may have { newComplaintId, lat, lng } when coming from ReportIssue
+  const highlightId = navState?.newComplaintId || null;
+  const highlightPos = (navState?.lat && navState?.lng) ? [navState.lat, navState.lng] : null;
+
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -68,6 +81,7 @@ export default function MapView() {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [newCount, setNewCount] = useState(0);
+  const [flyTarget, setFlyTarget] = useState(highlightPos); // zoom destination
   const prevIdsRef = useRef(new Set());
 
   const fetchComplaints = useCallback(async (silent = false) => {
@@ -89,12 +103,17 @@ export default function MapView() {
       const added = newIds.filter(id => !prevIdsRef.current.has(id));
       if (prevIdsRef.current.size > 0 && added.length > 0) {
         setNewCount(n => n + added.length);
-        setTimeout(() => setNewCount(0), 3000);
+        setTimeout(() => setNewCount(0), 4000);
       }
       prevIdsRef.current = new Set(newIds);
       setComplaints(withCoords);
       setLastUpdated(new Date());
       setError('');
+      // If we arrived from ReportIssue with a highlight id and the complaint just loaded, fly to it
+      if (highlightId) {
+        const target = withCoords.find(c => c.id === highlightId);
+        if (target) setFlyTarget([target.latitude, target.longitude]);
+      }
     } catch (err) {
       setError('Could not load complaints. Make sure the backend server is running on port 3001.');
     } finally {
@@ -129,13 +148,22 @@ export default function MapView() {
     return c.latitude && c.longitude;
   });
 
-  const mapCenter = userLocation || CITY_CENTER;
+  const mapCenter = flyTarget || userLocation || CITY_CENTER;
 
   return (
     <div className="animate-fadeIn space-y-4">
       {/* New complaint flash toast */}
-      {newCount > 0 && (
-        <div className="fixed top-20 right-4 z-50 bg-green-500 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-sm font-semibold animate-bounce">
+      {(newCount > 0 || highlightId) && complaints.find(c => c.id === highlightId) && (
+        <div className="fixed top-20 right-4 z-50 bg-green-500 text-white px-4 py-3 rounded-xl shadow-xl flex items-center gap-2.5 text-sm font-semibold">
+          <FiCheckCircle size={18} />
+          <div>
+            <div>Your complaint is now live on the map!</div>
+            <div className="text-green-100 text-xs font-normal mt-0.5">Pulsing marker shows your report location</div>
+          </div>
+        </div>
+      )}
+      {newCount > 0 && !highlightId && (
+        <div className="fixed top-20 right-4 z-50 bg-green-500 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-sm font-semibold">
           <FiMapPin size={16} />
           +{newCount} new complaint{newCount > 1 ? 's' : ''} appeared on map!
         </div>
@@ -275,7 +303,9 @@ export default function MapView() {
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
                 attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               />
-              {userLocation && (
+              {/* Fly to the newly submitted complaint */}
+              {flyTarget && <FlyTo position={flyTarget} zoom={15} />}
+              {userLocation && !flyTarget && (
                 <>
                   <FlyTo position={userLocation} />
                   <Circle center={userLocation} radius={200}
@@ -285,7 +315,38 @@ export default function MapView() {
                   </Marker>
                 </>
               )}
-              {filtered.map(c => (
+              {filtered.map(c => {
+                const isNew = c.id === highlightId;
+                if (isNew) {
+                  return (
+                    <Marker
+                      key={c.id}
+                      position={[c.latitude, c.longitude]}
+                      icon={makePulseIcon(STATUS_COLORS[c.status] || '#3b82f6')}
+                    >
+                      <Popup minWidth={220} autoPan>
+                        <div className="text-sm space-y-1">
+                          <div className="font-bold text-green-700 text-xs mb-1">✅ Just submitted by you!</div>
+                          <div className="flex items-center gap-2 mb-1">
+                            <span className="text-lg">{CATEGORY_EMOJI[c.category] || '📌'}</span>
+                            <span className="font-mono text-xs text-gray-500 bg-gray-100 px-1.5 py-0.5 rounded">
+                              {c.ticket_id || c.id.slice(0, 8)}
+                            </span>
+                          </div>
+                          <p className="font-bold text-gray-900 leading-tight">{c.title}</p>
+                          <p className="text-gray-600">📂 {c.category}</p>
+                          <p className="text-gray-600">Priority: <span className="font-semibold capitalize">{c.priority}</span></p>
+                          <p className="text-gray-600">Status: <span className="font-semibold">Registered</span></p>
+                          {c.address && <p className="text-gray-600">📍 {c.address}</p>}
+                          <Link to={`/complaint/${c.id}`} className="inline-block mt-2 text-indigo-600 font-semibold text-xs hover:underline">
+                            View Details →
+                          </Link>
+                        </div>
+                      </Popup>
+                    </Marker>
+                  );
+                }
+                return (
                 <CircleMarker
                   key={c.id}
                   center={[c.latitude, c.longitude]}
@@ -323,7 +384,8 @@ export default function MapView() {
                     </div>
                   </Popup>
                 </CircleMarker>
-              ))}
+                );
+              })}
             </MapContainer>
             </>
           )}

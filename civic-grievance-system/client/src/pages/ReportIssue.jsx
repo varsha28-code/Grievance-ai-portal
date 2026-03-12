@@ -183,8 +183,18 @@ export default function ReportIssue() {
 
       const data = await createComplaint(formData);
       setResult(data);
-      // Navigate to landing page after 2s
-      setTimeout(() => navigate('/'), 2000);
+      // Auto-navigate to map after 3s so user can see the marker appear
+      if (!data.merged && data.complaint) {
+        setTimeout(() => navigate('/map', {
+          state: {
+            newComplaintId: data.complaint.id,
+            lat: position?.[0],
+            lng: position?.[1],
+          }
+        }), 3000);
+      } else {
+        setTimeout(() => navigate('/'), 2500);
+      }
     } catch (err) {
       setError('Failed to submit complaint. Please try again.');
     } finally {
@@ -209,6 +219,11 @@ export default function ReportIssue() {
               <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Complaint Registered!</h2>
               <p className="text-gray-600 dark:text-gray-300 mb-2">Your complaint has been submitted successfully.</p>
               <p className="text-lg font-mono text-primary-600 mb-2">Ticket ID: {result.complaint.ticket_id}</p>
+              {position && (
+                <p className="text-sm text-green-600 dark:text-green-400 font-medium mt-1">
+                  📍 Location pinned — redirecting to city map in 3 seconds…
+                </p>
+              )}
               {result.classification && (
                 <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg inline-block">
                   <p className="text-sm text-blue-800 dark:text-blue-300">
@@ -221,8 +236,13 @@ export default function ReportIssue() {
               )}
             </>
           )}
-          <div className="flex justify-center gap-3 mt-6">
-            <button onClick={() => navigate(`/complaint/${result.complaint?.id || result.existingTicket}`)} className="btn-primary">
+          <div className="flex justify-center gap-3 mt-6 flex-wrap">
+            {!result.merged && result.complaint && position && (
+              <button onClick={() => navigate('/map', { state: { newComplaintId: result.complaint.id, lat: position[0], lng: position[1] } })} className="btn-primary">
+                🗺️ View on Map
+              </button>
+            )}
+            <button onClick={() => navigate(`/complaint/${result.complaint?.id || result.existingTicket}`)} className="btn-secondary">
               View Complaint
             </button>
             <button onClick={() => { setResult(null); setForm({ title: '', description: '', category: '', address: '', citizen_name: '', citizen_phone: '', citizen_email: '' }); setImagePreview(null); setImageFile(null); setPosition(null); }} className="btn-secondary">
