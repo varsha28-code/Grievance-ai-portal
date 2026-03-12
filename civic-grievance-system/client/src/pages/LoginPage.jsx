@@ -208,7 +208,7 @@ export default function LoginPage() {
                 <input type="checkbox" className="rounded border-gray-300 text-primary-600 focus:ring-primary-500" />
                 <span className="text-gray-600 dark:text-gray-300">Remember me</span>
               </label>
-              <a href="#" className="text-primary-600 dark:text-primary-400 hover:text-primary-700 font-medium">Forgot password?</a>
+              <a href="/forgot-password" onClick={e => { e.preventDefault(); window.location.href='/forgot-password'; }} className="text-primary-600 dark:text-primary-400 hover:text-primary-700 font-medium">Forgot password?</a>
             </div>
 
             <button

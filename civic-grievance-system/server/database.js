@@ -91,6 +91,15 @@ function initDB() {
       UNIQUE(complaint_id, voter_identifier),
       FOREIGN KEY (complaint_id) REFERENCES complaints(id)
     );
+
+    CREATE TABLE IF NOT EXISTS password_resets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL,
+      token TEXT UNIQUE NOT NULL,
+      expires_at DATETIME NOT NULL,
+      used INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Seed sample data if empty
