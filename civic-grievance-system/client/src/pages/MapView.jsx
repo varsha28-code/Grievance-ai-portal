@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Circle, useMap, useMapEvents } from 'react-leaflet';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { FiNavigation, FiRefreshCw, FiMapPin, FiFilter, FiInfo, FiList, FiMap } from 'react-icons/fi';
+import { FiNavigation, FiRefreshCw, FiMapPin, FiFilter, FiInfo, FiList, FiMap, FiPlusCircle, FiRadio } from 'react-icons/fi';
 
 // Fix Leaflet default icons
 delete L.Icon.Default.prototype._getIconUrl;
@@ -13,14 +13,8 @@ L.Icon.Default.mergeOptions({
 });
 
 const API_BASE = 'http://localhost:3001/api';
-
-// Bangalore city center + surrounding area coords for demo seeding
 const CITY_CENTER = [12.9716, 77.5946]; // Bangalore
-const AREA_NAMES = [
-  'Indiranagar', 'Koramangala', 'Whitefield', 'Jayanagar', 'Rajajinagar',
-  'Malleshwaram', 'HSR Layout', 'Electronic City', 'Hebbal', 'Banashankari',
-  'BTM Layout', 'Marathahalli', 'Yelahanka', 'JP Nagar', 'Vijayanagar',
-];
+const POLL_INTERVAL = 5000; // 5-second live refresh
 
 const STATUS_COLORS = {
   registered: '#3b82f6',
@@ -39,19 +33,6 @@ const CATEGORY_EMOJI = {
   'Stray Animals': '🐕', 'Tree Fall': '🌳', 'Sewage': '🪣',
 };
 
-// Seed complaints with Bangalore coords when none exist
-function maybeAddCoords(c, idx) {
-  if (c.latitude && c.longitude) return c;
-  const seed = idx * 137.5;  // golden angle offset for nice spread
-  const r = 0.03 + (Math.sin(seed) * 0.5 + 0.5) * 0.06;
-  const angle = (seed % 360) * (Math.PI / 180);
-  return {
-    ...c,
-    latitude:  CITY_CENTER[0] + r * Math.cos(angle),
-    longitude: CITY_CENTER[1] + r * Math.sin(angle),
-    address:   c.address || AREA_NAMES[idx % AREA_NAMES.length],
-  };
-}
 
 function FlyTo({ position }) {
   const map = useMap();
@@ -75,6 +56,7 @@ function RecenterButton({ userLocation, onLocate }) {
 }
 
 export default function MapView() {
+  const navigate = useNavigate();
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -82,32 +64,51 @@ export default function MapView() {
   const [userLocation, setUserLocation] = useState(null);
   const [locating, setLocating] = useState(false);
   const [selectedComplaint, setSelectedComplaint] = useState(null);
-  const [view, setView] = useState('map'); // 'map' | 'list'
+  const [view, setView] = useState('map');
   const [refreshing, setRefreshing] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState(null);
+  const [newCount, setNewCount] = useState(0);
+  const prevIdsRef = useRef(new Set());
 
-  const fetchComplaints = async () => {
+  const fetchComplaints = useCallback(async (silent = false) => {
     try {
-      setRefreshing(true);
-      const params = new URLSearchParams({ limit: 200 });
+      if (!silent) setRefreshing(true);
+      const params = new URLSearchParams({ limit: 500 });
       if (filters.status)   params.set('status', filters.status);
       if (filters.category) params.set('category', filters.category);
       if (filters.priority) params.set('priority', filters.priority);
       const res = await fetch(`${API_BASE}/complaints?${params}`);
       if (!res.ok) throw new Error(`Server error ${res.status}`);
       const data = await res.json();
-      const withCoords = (data.complaints || []).map((c, i) => maybeAddCoords(c, i));
+      // Only keep complaints that have real submitted coordinates
+      const withCoords = (data.complaints || []).filter(
+        c => c.latitude != null && c.longitude != null
+      );
+      // Detect newly appeared markers since last poll
+      const newIds = withCoords.map(c => c.id);
+      const added = newIds.filter(id => !prevIdsRef.current.has(id));
+      if (prevIdsRef.current.size > 0 && added.length > 0) {
+        setNewCount(n => n + added.length);
+        setTimeout(() => setNewCount(0), 3000);
+      }
+      prevIdsRef.current = new Set(newIds);
       setComplaints(withCoords);
+      setLastUpdated(new Date());
       setError('');
     } catch (err) {
       setError('Could not load complaints. Make sure the backend server is running on port 3001.');
-      console.error(err);
     } finally {
       setLoading(false);
-      setRefreshing(false);
+      if (!silent) setRefreshing(false);
     }
-  };
+  }, [filters]);
 
-  useEffect(() => { fetchComplaints(); }, [filters]);
+  // Initial fetch + live polling every 5 s
+  useEffect(() => {
+    fetchComplaints();
+    const interval = setInterval(() => fetchComplaints(true), POLL_INTERVAL);
+    return () => clearInterval(interval);
+  }, [fetchComplaints]);
 
   const locateUser = () => {
     setLocating(true);
@@ -132,22 +133,46 @@ export default function MapView() {
 
   return (
     <div className="animate-fadeIn space-y-4">
+      {/* New complaint flash toast */}
+      {newCount > 0 && (
+        <div className="fixed top-20 right-4 z-50 bg-green-500 text-white px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-2 text-sm font-semibold animate-bounce">
+          <FiMapPin size={16} />
+          +{newCount} new complaint{newCount > 1 ? 's' : ''} appeared on map!
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
             <FiMapPin className="text-indigo-500" /> City Issue Map
           </h2>
-          <p className="text-gray-500 dark:text-gray-400 text-sm">
-            {loading ? 'Loading...' : `${filtered.length} active issues across the city`}
-          </p>
+          <div className="flex items-center gap-3 mt-0.5">
+            <p className="text-gray-500 dark:text-gray-400 text-sm">
+              {loading ? 'Loading...' : filtered.length === 0 ? 'No issues pinned yet — submit a complaint to add a marker' : `${filtered.length} issue${filtered.length !== 1 ? 's' : ''} pinned on map`}
+            </p>
+            {/* Live pulse indicator */}
+            {!loading && (
+              <span className="flex items-center gap-1 text-xs text-green-600 dark:text-green-400 font-medium">
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
+                </span>
+                Live
+              </span>
+            )}
+          </div>
         </div>
         <div className="flex items-center gap-2">
+          <button onClick={() => navigate('/report')}
+            className="flex items-center gap-1.5 text-sm bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-2 rounded-lg transition-colors font-medium shadow-sm">
+            <FiPlusCircle size={15} /> Report Issue
+          </button>
           <button onClick={() => setView(v => v === 'map' ? 'list' : 'map')}
             className="flex items-center gap-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium text-gray-700 dark:text-gray-200">
             {view === 'map' ? <><FiList size={15}/> List View</> : <><FiMap size={15}/> Map View</>}
           </button>
-          <button onClick={fetchComplaints} disabled={refreshing}
+          <button onClick={() => fetchComplaints(false)} disabled={refreshing}
             className="flex items-center gap-1.5 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 px-3 py-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium text-gray-700 dark:text-gray-200 disabled:opacity-50">
             <FiRefreshCw size={15} className={refreshing ? 'animate-spin' : ''} /> Refresh
           </button>
@@ -197,6 +222,11 @@ export default function MapView() {
         ))}
         <span className="text-gray-400 hidden sm:inline">·</span>
         <span className="font-semibold text-gray-600 dark:text-gray-400">Size = Priority</span>
+        {lastUpdated && (
+          <span className="ml-auto text-gray-400 text-xs">
+            Updated {lastUpdated.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+          </span>
+        )}
       </div>
 
       {/* Error Banner */}
@@ -205,20 +235,41 @@ export default function MapView() {
           <FiInfo size={16} className="mt-0.5 shrink-0" />
           <div>
             <strong>Backend offline:</strong> {error}
-            <button onClick={fetchComplaints} className="ml-3 underline font-medium hover:no-underline">Retry</button>
+            <button onClick={() => fetchComplaints(false)} className="ml-3 underline font-medium hover:no-underline">Retry</button>
           </div>
         </div>
       )}
 
       {/* MAP VIEW */}
       {view === 'map' && (
-        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-sm" style={{ height: 580 }}>
+        <div className="relative bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden shadow-sm" style={{ height: 580 }}>
           {loading ? (
             <div className="h-full flex flex-col items-center justify-center bg-gray-50 dark:bg-gray-900 gap-3">
               <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-indigo-600"></div>
               <p className="text-gray-500 dark:text-gray-400 text-sm">Loading map data...</p>
             </div>
           ) : (
+            <>
+            {/* Empty state overlay — map tiles still visible behind */}
+            {filtered.length === 0 && (
+              <div className="absolute inset-0 z-[1000] flex items-center justify-center pointer-events-none">
+                <div className="bg-white/90 dark:bg-gray-900/90 backdrop-blur-sm border border-gray-200 dark:border-gray-700 rounded-2xl shadow-xl px-8 py-7 flex flex-col items-center gap-3 max-w-sm text-center pointer-events-auto">
+                  <div className="w-14 h-14 rounded-full bg-indigo-50 dark:bg-indigo-900/30 flex items-center justify-center">
+                    <FiMapPin size={26} className="text-indigo-400" />
+                  </div>
+                  <h3 className="font-bold text-gray-900 dark:text-white text-lg">No complaints pinned yet</h3>
+                  <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed">
+                    The map is live. Submit a complaint with your location and it will appear as a marker instantly.
+                  </p>
+                  <button
+                    onClick={() => navigate('/report')}
+                    className="mt-1 flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-lg transition-colors shadow-md"
+                  >
+                    <FiPlusCircle size={16} /> Report an Issue
+                  </button>
+                </div>
+              </div>
+            )}
             <MapContainer center={mapCenter} zoom={12} style={{ height: '100%', width: '100%' }} scrollWheelZoom={true}>
               <TileLayer
                 url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
@@ -274,6 +325,7 @@ export default function MapView() {
                 </CircleMarker>
               ))}
             </MapContainer>
+            </>
           )}
         </div>
       )}
