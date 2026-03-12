@@ -4,7 +4,7 @@ import { FiMail, FiLock, FiEye, FiEyeOff, FiUser, FiPhone, FiArrowLeft, FiCheckC
 import { useAuth } from '../context/AuthContext';
 
 export default function RegisterPage() {
-  const { login, isLoggedIn } = useAuth();
+  const { register, isLoggedIn, user } = useAuth();
   const navigate = useNavigate();
 
   const [form, setForm] = useState({ name: '', email: '', phone: '', password: '', confirmPassword: '' });
@@ -13,8 +13,8 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (isLoggedIn) navigate('/dashboard');
-  }, [isLoggedIn]);
+    if (isLoggedIn && user) navigate('/');
+  }, [isLoggedIn, user, navigate]);
 
   const handleChange = (e) => {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -39,23 +39,15 @@ export default function RegisterPage() {
     setError('');
 
     try {
-      const res = await fetch('/api/auth/register', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: form.name, email: form.email, phone: form.phone, password: form.password }),
+      await register(form.email, form.password, {
+        name: form.name,
+        phone: form.phone,
+        role: 'citizen'
       });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || 'Registration failed');
-        setLoading(false);
-        return;
-      }
-
-      login(data.user);
-      navigate('/dashboard');
+      // Navigation is handled automatically by the useEffect
     } catch (err) {
-      setError('Unable to connect to server. Please try again.');
+      if (err.code === 'auth/email-already-in-use') setError('Email already in use.');
+      else setError(err.message || 'Registration failed. Please try again.');
     }
     setLoading(false);
   };
@@ -72,15 +64,13 @@ export default function RegisterPage() {
             <FiArrowLeft size={16} /> Back to Home
           </Link>
 
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-14 bg-white/10 backdrop-blur rounded-xl flex items-center justify-center">
-              <img src="/logo.svg" alt="CivicResolve Logo" className="w-10 h-12 brightness-0 invert" />
-            </div>
+          <Link to="/" className="flex items-center gap-3 mb-8 hover:opacity-80 transition-opacity">
+            <img src="/logo.png" alt="Voice4City Logo" className="w-12 h-12 object-contain" />
             <div>
-              <h1 className="text-2xl font-bold text-white">CivicResolve</h1>
-              <p className="text-civic-300 text-sm">Smart Grievance Management</p>
+              <h1 className="text-2xl font-bold text-white">Voice4City</h1>
+              <p className="text-civic-300 text-sm">Empowering Citizen Voices</p>
             </div>
-          </div>
+          </Link>
 
           <h2 className="text-4xl font-extrabold text-white leading-tight mb-6">
             Join the movement<br />
@@ -116,12 +106,10 @@ export default function RegisterPage() {
 
           <div className="text-center mb-8">
             <div className="lg:hidden flex items-center justify-center gap-2 mb-4">
-              <div className="w-10 h-10 flex items-center justify-center">
-                <img src="/logo.svg" alt="CivicResolve Logo" className="w-8 h-10" />
-              </div>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">CivicResolve</h1>
+              <img src="/logo.png" alt="Voice4City Logo" className="w-10 h-10 object-contain" />
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Voice4City</h1>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Create Citizen Account</h2>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Join Voice4City</h2>
             <p className="text-gray-500 dark:text-gray-400 mt-1">Register to start reporting civic issues</p>
           </div>
 

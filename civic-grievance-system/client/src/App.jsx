@@ -6,6 +6,7 @@ import { ThemeProvider, useTheme } from './context/ThemeContext';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
+import AdminLoginPage from './pages/AdminLoginPage';
 import Dashboard from './pages/Dashboard';
 import ReportIssue from './pages/ReportIssue';
 import MapView from './pages/MapView';
@@ -14,6 +15,11 @@ import TrackComplaint from './pages/TrackComplaint';
 import ComplaintDetail from './pages/ComplaintDetail';
 import AdminPanel from './pages/AdminPanel';
 import Chatbot from './components/Chatbot';
+import NotificationsPage from './pages/NotificationsPage';
+import CommunityPage from './pages/CommunityPage';
+import EmergencyPage from './pages/EmergencyPage';
+import ProfilePage from './pages/ProfilePage';
+import AIAssistantPage from './pages/AIAssistantPage';
 
 function ProtectedRoute({ children, adminOnly = false }) {
   const { isLoggedIn, isAdmin, isOfficer } = useAuth();
@@ -42,9 +48,10 @@ function AppRoutes() {
   if (isPublicPage) {
     return (
       <Routes>
-        <Route path="/" element={isLoggedIn ? <Navigate to="/dashboard" replace /> : <LandingPage />} />
+        <Route path="/" element={<LandingPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/admin/login" element={<AdminLoginPage />} />
       </Routes>
     );
   }
@@ -93,13 +100,13 @@ function AppShell() {
       <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16">
-            <Link to="/dashboard" className="flex items-center gap-3">
+            <Link to="/" className="flex items-center gap-3">
               <div className="w-10 h-10 flex items-center justify-center">
-                <img src="/logo.svg" alt="CivicResolve Logo" className="w-10 h-12" />
+                <img src="/logo.png" alt="Voice4City Logo" className="w-10 h-10 object-contain" />
               </div>
               <div>
-                <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">CivicResolve</h1>
-                <p className="text-xs text-gray-500 dark:text-gray-400 -mt-0.5">Smart Grievance Management</p>
+                <h1 className="text-xl font-bold text-gray-900 dark:text-white leading-tight">Voice4City</h1>
+                <p className="text-xs text-gray-500 dark:text-gray-400 -mt-0.5">Empowering Citizen Voices</p>
               </div>
             </Link>
 
@@ -224,6 +231,11 @@ function AppShell() {
           <Route path="/track" element={<ProtectedRoute><TrackComplaint /></ProtectedRoute>} />
           <Route path="/complaint/:id" element={<ProtectedRoute><ComplaintDetail /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute adminOnly><AdminPanel /></ProtectedRoute>} />
+          <Route path="/notifications" element={<ProtectedRoute><NotificationsPage /></ProtectedRoute>} />
+          <Route path="/community" element={<ProtectedRoute><CommunityPage /></ProtectedRoute>} />
+          <Route path="/emergency" element={<ProtectedRoute><EmergencyPage /></ProtectedRoute>} />
+          <Route path="/profile" element={<ProtectedRoute><ProfilePage /></ProtectedRoute>} />
+          <Route path="/ai" element={<ProtectedRoute><AIAssistantPage /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </main>
@@ -245,7 +257,7 @@ function AppShell() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex flex-col md:flex-row justify-between items-center gap-4">
             <div className="text-sm text-gray-500 dark:text-gray-400">
-              © 2026 CivicResolve — AI-Powered Smart Civic Grievance Management System
+              © 2026 Voice4City — AI-Powered Smart Civic Voice Portal
             </div>
             <div className="flex gap-6 text-sm text-gray-500 dark:text-gray-400">
               <span>🌐 Multilingual Support</span>

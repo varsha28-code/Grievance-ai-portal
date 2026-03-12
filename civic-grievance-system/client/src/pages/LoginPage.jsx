@@ -4,7 +4,7 @@ import { FiMail, FiLock, FiEye, FiEyeOff, FiShield, FiUser, FiArrowLeft } from '
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginPage() {
-  const { login, isLoggedIn } = useAuth();
+  const { login, isLoggedIn, user } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -15,8 +15,10 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    if (isLoggedIn) navigate('/dashboard');
-  }, [isLoggedIn]);
+    if (isLoggedIn && user) {
+      navigate(user.role === 'citizen' ? '/' : '/admin');
+    }
+  }, [isLoggedIn, user, navigate]);
 
   const handleChange = (e) => {
     setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
@@ -33,23 +35,14 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...form, role: activeTab === 'admin' ? undefined : 'citizen' }),
-      });
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.error || 'Invalid credentials');
-        setLoading(false);
-        return;
-      }
-
-      login(data.user);
-      navigate(data.user.role === 'citizen' ? '/dashboard' : '/admin');
+      await login(form.email, form.password);
+      // Navigation is handled automatically by the useEffect watching `isLoggedIn` and `user`
     } catch (err) {
-      setError('Unable to connect to server. Please try again.');
+      if (err.code === 'auth/invalid-credential' || err.code === 'auth/user-not-found' || err.code === 'auth/wrong-password') {
+        setError('Invalid email or password.');
+      } else {
+        setError(err.message || 'Unable to connect to server. Please try again.');
+      }
     }
     setLoading(false);
   };
@@ -76,15 +69,13 @@ export default function LoginPage() {
             <span className="text-primary-300 text-sm group-hover:text-white transition-colors">Back to Home</span>
           </Link>
 
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-12 h-14 bg-white/10 backdrop-blur rounded-xl flex items-center justify-center">
-              <img src="/logo.svg" alt="CivicResolve Logo" className="w-10 h-12 brightness-0 invert" />
-            </div>
+          <Link to="/" className="flex items-center gap-3 mb-8 hover:opacity-80 transition-opacity">
+            <img src="/logo.png" alt="Voice4City Logo" className="w-12 h-12 object-contain" />
             <div>
-              <h1 className="text-2xl font-bold text-white">CivicResolve</h1>
-              <p className="text-primary-300 text-sm">Smart Grievance Management</p>
+              <h1 className="text-2xl font-bold text-white">Voice4City</h1>
+              <p className="text-primary-300 text-sm">Empowering Citizen Voices</p>
             </div>
-          </div>
+          </Link>
 
           <h2 className="text-4xl font-extrabold text-white leading-tight mb-6">
             Your voice matters.<br />
@@ -130,13 +121,11 @@ export default function LoginPage() {
 
           <div className="text-center mb-8">
             <div className="lg:hidden flex items-center justify-center gap-2 mb-4">
-              <div className="w-10 h-10 flex items-center justify-center">
-                <img src="/logo.svg" alt="CivicResolve Logo" className="w-8 h-10" />
-              </div>
-              <h1 className="text-xl font-bold text-gray-900 dark:text-white">CivicResolve</h1>
+              <img src="/logo.png" alt="Voice4City Logo" className="w-10 h-10 object-contain" />
+              <h1 className="text-xl font-bold text-gray-900 dark:text-white">Voice4City</h1>
             </div>
             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Welcome Back</h2>
-            <p className="text-gray-500 dark:text-gray-400 mt-1">Sign in to your account to continue</p>
+            <p className="text-gray-500 dark:text-gray-400 mt-1">Sign in to your Voice4City account to continue</p>
           </div>
 
           {/* Role Tabs */}

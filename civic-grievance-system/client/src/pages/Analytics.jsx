@@ -7,19 +7,12 @@ const COLORS = ['#3b82f6', '#22c55e', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'
 const PRIORITY_COLORS = { critical: '#ef4444', high: '#f97316', medium: '#eab308', low: '#22c55e' };
 
 export default function Analytics() {
-  const [stats, setStats] = useState(null);
-  const [officers, setOfficers] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // 🔥 New Real-time Firebase Analytics
   const [activeTab, setActiveTab] = useState('overview');
+  const stats = useFirebaseAnalytics();
+  const { officers, isLoading: officersLoading } = useFirebaseOfficerStats();
 
-  useEffect(() => {
-    Promise.all([fetchDashboardStats(), fetchOfficerPerformance()])
-      .then(([s, o]) => {
-        setStats(s);
-        setOfficers(o);
-        setLoading(false);
-      });
-  }, []);
+  const loading = stats.isLoading || officersLoading;
 
   if (loading) return <div className="animate-pulse space-y-4">{[...Array(4)].map((_, i) => <div key={i} className="h-48 bg-gray-200 dark:bg-gray-700 rounded-xl"></div>)}</div>;
 
@@ -60,10 +53,23 @@ export default function Analytics() {
               <h3 className="font-semibold text-gray-900 dark:text-white mb-4">Complaint Status Distribution</h3>
               <ResponsiveContainer width="100%" height={300}>
                 <PieChart>
-                  <Pie data={stats.byStatus} dataKey="count" nameKey="status" cx="50%" cy="50%" outerRadius={100} label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}>
+                  <Pie 
+                    data={stats.byStatus} 
+                    dataKey="count" 
+                    nameKey="status" 
+                    cx="50%" 
+                    cy="50%" 
+                    outerRadius={100} 
+                    label={({ status, percent }) => {
+                      const formattedStatus = status.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                      return `${formattedStatus} (${(percent * 100).toFixed(0)}%)`;
+                    }}
+                  >
                     {stats.byStatus.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
                   </Pie>
-                  <Tooltip />
+                  <Tooltip 
+                    formatter={(value, name) => [value, name.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')]}
+                  />
                 </PieChart>
               </ResponsiveContainer>
             </div>
@@ -73,9 +79,9 @@ export default function Analytics() {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={stats.byPriority}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="priority" />
+                  <XAxis dataKey="priority" tickFormatter={(val) => val.charAt(0).toUpperCase() + val.slice(1)} />
                   <YAxis />
-                  <Tooltip />
+                  <Tooltip formatter={(value, name, props) => [value, props.payload.priority.charAt(0).toUpperCase() + props.payload.priority.slice(1)]} />
                   <Bar dataKey="count" radius={[4, 4, 0, 0]}>
                     {stats.byPriority.map((entry, i) => (
                       <Cell key={i} fill={PRIORITY_COLORS[entry.priority] || COLORS[i]} />

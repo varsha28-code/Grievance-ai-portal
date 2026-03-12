@@ -1,8 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { MapContainer, TileLayer, Marker, Popup, CircleMarker } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, CircleMarker, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
-import { fetchMapData } from '../api';
+import { FiNavigation } from 'react-icons/fi';
+import { collection, onSnapshot, query, limit } from 'firebase/firestore';
+import { db } from '../firebase';
+
+function FlyToLocation({ position }) {
+  const map = useMap();
+  useEffect(() => {
+    if (position) map.flyTo(position, 14, { duration: 1.2 });
+  }, [position, map]);
+  return null;
+}
 
 // Fix leaflet marker icon
 delete L.Icon.Default.prototype._getIconUrl;
@@ -38,17 +48,60 @@ const CATEGORY_ICONS = {
   'Public Safety': '⚠️',
 };
 
+
 export default function MapView() {
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filters, setFilters] = useState({ status: '', category: '', priority: '' });
+  const [userLocation, setUserLocation] = useState(null);
+  const [locating, setLocating] = useState(true);
 
   useEffect(() => {
-    fetchMapData().then(data => {
+    // 1. Real-time Firebase Listener
+    const complaintsRef = collection(db, 'complaints');
+    const q = query(complaintsRef, limit(200)); // Reasonable limit for map view
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setComplaints(data);
+      if (loading) setLoading(false);
+    }, (error) => {
+      console.error("Firestore Map Error:", error);
       setLoading(false);
     });
+
+    // 2. Locate User
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserLocation([pos.coords.latitude, pos.coords.longitude]);
+          setLocating(false);
+        },
+        () => setLocating(false),
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } else {
+      setLocating(false);
+    }
+
+    return () => unsubscribe();
   }, []);
+
+  const handleRecenter = () => {
+    setLocating(true);
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        (pos) => {
+          setUserLocation([pos.coords.latitude, pos.coords.longitude]);
+          setLocating(false);
+        },
+        () => setLocating(false),
+        { enableHighAccuracy: true }
+      );
+    } else {
+      setLocating(false);
+    }
+  };
 
   const filteredComplaints = complaints.filter(c => {
     if (filters.status && c.status !== filters.status) return false;
@@ -91,8 +144,8 @@ export default function MapView() {
         </div>
       </div>
 
-      {/* Legend */}
-      <div className="card mb-4 p-3">
+      {/* Legend & Controls */}
+      <div className="card mb-4 p-3 flex flex-wrap justify-between items-center gap-4">
         <div className="flex flex-wrap gap-4 items-center text-sm">
           <span className="font-semibold text-gray-700 dark:text-gray-300">Status:</span>
           {Object.entries(STATUS_COLORS).map(([key, color]) => (
@@ -101,9 +154,14 @@ export default function MapView() {
               <span className="capitalize">{key.replace('_', ' ')}</span>
             </span>
           ))}
-          <span className="text-gray-300 dark:text-gray-600 mx-2">|</span>
+          <span className="text-gray-300 dark:text-gray-600 mx-2 hidden sm:inline">|</span>
           <span className="font-semibold text-gray-700 dark:text-gray-300">Size = Priority</span>
         </div>
+        <button type="button" onClick={handleRecenter} disabled={locating} 
+          className="text-sm text-indigo-600 hover:bg-indigo-100 flex items-center gap-1.5 disabled:opacity-50 bg-indigo-50 dark:bg-indigo-900/30 dark:text-indigo-400 px-4 py-2 rounded-full font-medium transition-colors shadow-sm">
+          <FiNavigation size={16} className={locating ? 'animate-spin' : ''} />
+          {locating ? 'Locating...' : 'My Location'}
+        </button>
       </div>
 
       {/* Map */}
@@ -113,11 +171,24 @@ export default function MapView() {
             <div className="text-gray-500 dark:text-gray-400">Loading map data...</div>
           </div>
         ) : (
-          <MapContainer center={[12.9516, 77.5946]} zoom={12} className="h-full w-full">
+          <MapContainer center={userLocation || [12.9516, 77.5946]} zoom={12} className="h-full w-full">
             <TileLayer
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
               attribution='&copy; OpenStreetMap contributors'
             />
+            {userLocation && (
+              <>
+                <FlyToLocation position={userLocation} />
+                <Circle
+                  center={userLocation}
+                  radius={100}
+                  pathOptions={{ color: '#3b82f6', fillColor: '#3b82f6', fillOpacity: 0.2 }}
+                />
+                <Marker position={userLocation}>
+                  <Popup>You are here</Popup>
+                </Marker>
+              </>
+            )}
             {filteredComplaints.map(c => (
               <CircleMarker
                 key={c.id}

@@ -1,7 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FiRefreshCw, FiArrowRight } from 'react-icons/fi';
-import { fetchComplaints, fetchOfficerPerformance, updateComplaintStatus } from '../api';
+import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
+import { db } from '../firebase';
+import { updateComplaintStatus } from '../api';
+import { useFirebaseOfficerStats } from '../hooks/useFirebaseOfficerStats';
 
 const STATUS_LABELS = { registered: 'Registered', assigned: 'Assigned', in_progress: 'In Progress', resolved: 'Resolved', reopened: 'Re-opened' };
 const STATUS_OPTIONS = ['registered', 'assigned', 'in_progress', 'resolved'];
@@ -9,32 +12,64 @@ const PRIORITY_COLORS = { critical: 'badge-critical', high: 'badge-high', medium
 const STATUS_COLORS = { registered: 'badge-registered', assigned: 'badge-assigned', in_progress: 'badge-in_progress', resolved: 'badge-resolved', reopened: 'badge-reopened' };
 
 export default function AdminPanel() {
+  // 🔥 New Real-time Firebase Data
+  const { officers, isLoading: statsLoading } = useFirebaseOfficerStats();
   const [complaints, setComplaints] = useState([]);
-  const [officers, setOfficers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState('');
   const [updating, setUpdating] = useState(null);
 
-  useEffect(() => {
-    loadData();
-  }, [filter]);
+  const [notifications, setNotifications] = useState([]);
+  const isInitialLoad = React.useRef(true);
 
-  const loadData = async () => {
-    setLoading(true);
-    const [cData, oData] = await Promise.all([
-      fetchComplaints({ status: filter, limit: 50, sort: 'priority' }),
-      fetchOfficerPerformance(),
-    ]);
-    setComplaints(cData.complaints || []);
-    setOfficers(oData);
-    setLoading(false);
-  };
+  useEffect(() => {
+    const complaintsRef = collection(db, 'complaints');
+    let q = query(complaintsRef, orderBy('createdAt', 'desc'), limit(100));
+    
+    if (filter) {
+      q = query(complaintsRef, where('status', '==', filter), orderBy('createdAt', 'desc'), limit(100));
+    }
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Trigger notifications for new additions (after initial load)
+      if (!isInitialLoad.current) {
+        snapshot.docChanges().forEach((change) => {
+          if (change.type === "added") {
+            const newDoc = change.doc.data();
+            const newNotif = {
+              id: Date.now() + Math.random(),
+              title: 'New Complaint Received!',
+              ticket: newDoc.ticket_id,
+              issue: newDoc.title,
+              time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            };
+            setNotifications(prev => [newNotif, ...prev].slice(0, 5));
+            
+            // Auto-hide notification after 10 seconds
+            setTimeout(() => {
+              setNotifications(prev => prev.filter(n => n.id !== newNotif.id));
+            }, 10000);
+          }
+        });
+      }
+
+      setComplaints(data);
+      setLoading(false);
+      isInitialLoad.current = false;
+    }, (error) => {
+      console.error("Admin Real-time Error:", error);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, [filter]);
 
   const handleStatusUpdate = async (complaintId, newStatus) => {
     setUpdating(complaintId);
     try {
       await updateComplaintStatus(complaintId, newStatus, `Status updated to ${newStatus} by admin`);
-      loadData();
     } catch (err) {
       console.error(err);
     }
@@ -42,11 +77,38 @@ export default function AdminPanel() {
   };
 
   return (
-    <div className="animate-fadeIn">
+    <div className="animate-fadeIn relative">
+      {/* Notification Overlay */}
+      <div className="fixed top-20 right-6 z-[60] flex flex-col gap-3 w-80 pointer-events-none">
+        {notifications.map(n => (
+          <div key={n.id} className="pointer-events-auto bg-white dark:bg-gray-800 border-l-4 border-primary-600 shadow-2xl rounded-lg p-4 animate-slideInRight ring-1 ring-black/5">
+            <div className="flex justify-between items-start mb-1">
+              <span className="text-[10px] font-bold text-primary-600 uppercase tracking-widest flex items-center gap-1">
+                <FiBell size={10} /> Live Alert
+              </span>
+              <span className="text-[10px] text-gray-400">{n.time}</span>
+            </div>
+            <p className="text-sm font-bold text-gray-900 dark:text-white leading-tight">{n.title}</p>
+            <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">{n.issue}</p>
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-[10px] font-mono bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-gray-500">{n.ticket}</span>
+              <button 
+                onClick={() => setNotifications(prev => prev.filter(notif => notif.id !== n.id))}
+                className="text-[10px] text-primary-600 font-bold hover:underline"
+              >
+                Dismiss
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
         <div>
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Admin Panel</h2>
-          <p className="text-gray-500 dark:text-gray-400">Manage complaints, officers, and workflow</p>
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+            <FiShield className="text-primary-600" /> Admin Command Center
+          </h2>
+          <p className="text-gray-500 dark:text-gray-400">Manage city-wide operations and real-time grievances</p>
         </div>
         <button onClick={loadData} className="btn-secondary flex items-center gap-2">
           <FiRefreshCw size={14} /> Refresh
@@ -77,8 +139,14 @@ export default function AdminPanel() {
               </div>
             </div>
             <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400">
-              <span>Pending: <strong className="text-amber-600">{o.pending}</strong></span>
-              <span>Resolved: <strong className="text-green-600">{o.resolved}</strong></span>
+              {statsLoading ? (
+                <span className="text-gray-400 italic">Syncing live values...</span>
+              ) : (
+                <>
+                  <span>Pending: <strong className="text-amber-600">{o.pending}</strong></span>
+                  <span>Resolved: <strong className="text-green-600">{o.resolved}</strong></span>
+                </>
+              )}
             </div>
           </div>
         ))}

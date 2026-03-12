@@ -4,7 +4,7 @@ import { sendChatMessage } from '../api';
 
 export default function Chatbot({ onClose }) {
   const [messages, setMessages] = useState([
-    { role: 'bot', text: "Hello! 👋 I'm **CivicBot**, your civic grievance assistant. How can I help you today?\n\nYou can:\n• Report a new complaint\n• Track an existing complaint\n• Learn about complaint categories\n• Get help with the platform" },
+    { role: 'bot', text: "Hello! 👋 I'm **VoiceBot**, your civic grievance assistant. How can I help you today?\n\nYou can:\n• Report a new complaint\n• Track an existing complaint\n• Learn about complaint categories\n• Get help with the platform" },
   ]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
