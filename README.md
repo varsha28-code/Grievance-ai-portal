@@ -231,7 +231,7 @@ It motivates further development and improvements.
 This project is licensed under the MIT License.
 
 ---
-👥 Team
+👥 TEAM 
 
 Built for  hackathon 2026
 
