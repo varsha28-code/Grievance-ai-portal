@@ -133,6 +133,10 @@ npm run dev
 ## 📸 Screenshots
 
 > Add screenshots of your application here.
+> <img width="919" height="491" alt="image" src="https://github.com/user-attachments/assets/a8fa97a5-fe8a-427c-8523-7efb284f34d4" />
+> <img width="926" height="473" alt="image" src="https://github.com/user-attachments/assets/1a7a0f5b-2a9c-4fa4-9f50-5591afe35528" />
+
+
 
 Example:
 
@@ -145,7 +149,7 @@ screenshots/
 
 ---
 
-## 🚀 Future Enhancements
+## 🚀 Enhancements
 
 * Voice Assistant
 * Multi-language Support
