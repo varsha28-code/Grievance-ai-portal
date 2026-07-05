@@ -1,10 +1,8 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, query } from 'firebase/firestore';
-import { db } from '../firebase'; // Ensure your firebase.js exports 'db'
 
 /**
  * Custom hook to calculate Dashboard metrics in real-time
- * using Firebase Firestore an onSnapshot listener.
+ * using the local SQLite API endpoints with polling.
  */
 export function useFirebaseDashboardStats() {
   const [stats, setStats] = useState({
@@ -21,76 +19,49 @@ export function useFirebaseDashboardStats() {
   });
 
   useEffect(() => {
-    // Reference to the complaints collection
-    const complaintsRef = collection(db, 'complaints');
-    const q = query(complaintsRef);
+    let active = true;
 
-    // Set up the real-time listener
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      let total = 0;
-      let registered = 0;
-      let assigned = 0;
-      let inProgress = 0;
-      let resolved = 0;
-      let critical = 0;
-      let totalResolutionDays = 0;
+    async function loadStats() {
+      try {
+        const response = await fetch('/api/analytics/dashboard');
+        if (!response.ok) throw new Error('Failed to fetch dashboard stats');
+        const data = await response.json();
+        
+        if (active) {
+          const overview = data.overview || {};
+          const resolved = overview.resolved || 0;
+          const total = overview.total || 0;
+          const activeComplaints = total - resolved;
 
-      // Loop through all documents in real-time
-      snapshot.forEach((doc) => {
-        const data = doc.data();
-        total++;
-
-        // 1. Count Statuses
-        if (data.status === 'registered') registered++;
-        else if (data.status === 'assigned') assigned++;
-        else if (data.status === 'in_progress') inProgress++;
-        else if (data.status === 'resolved') resolved++;
-
-        // 2. Count Priority
-        if (data.priority === 'critical') critical++;
-
-        // 3. Calculate Resolution Time for resolved complaints
-        if (data.status === 'resolved' && data.createdAt && data.resolvedAt) {
-          // Handle both Firestore Timestamp objects or standard Date strings/seconds
-          const created = data.createdAt.toMillis ? data.createdAt.toMillis() : new Date(data.createdAt).getTime();
-          const resolved = data.resolvedAt.toMillis ? data.resolvedAt.toMillis() : new Date(data.resolvedAt).getTime();
-          
-          if (resolved > created) {
-            const resolutionDays = (resolved - created) / (1000 * 60 * 60 * 24);
-            totalResolutionDays += resolutionDays;
-          }
+          setStats({
+            total: total,
+            registered: overview.registered || 0,
+            assigned: overview.assigned || 0,
+            inProgress: overview.inProgress || 0,
+            resolved: resolved,
+            critical: overview.critical || 0,
+            active: activeComplaints,
+            resolutionRate: data.resolutionRate || 0,
+            avgResolutionDays: data.avgResolutionDays || 0,
+            isLoading: false
+          });
         }
-      });
+      } catch (error) {
+        console.error("Error loading dashboard stats:", error);
+        if (active) {
+          setStats(prev => ({ ...prev, isLoading: false }));
+        }
+      }
+    }
 
-      // 4. Calculate final metrics
-      const active = total - resolved;
-      const resolutionRate = total > 0 ? Math.round((resolved / total) * 100) : 0;
-      
-      // Feature Req: Avg Resolution must show 0 when there are no resolved complaints
-      const avgResolutionDays = resolved > 0 
-        ? parseFloat((totalResolutionDays / resolved).toFixed(1)) 
-        : 0;
+    loadStats();
+    // Poll every 10 seconds for real-time live data
+    const timer = setInterval(loadStats, 10000);
 
-      // Update state
-      setStats({
-        total,
-        registered,
-        assigned,
-        inProgress,
-        resolved,
-        critical,
-        active,
-        resolutionRate,
-        avgResolutionDays,
-        isLoading: false
-      });
-    }, (error) => {
-      console.error("Error fetching real-time stats: ", error);
-      setStats(prev => ({ ...prev, isLoading: false }));
-    });
-
-    // Cleanup the listener when the component unmounts
-    return () => unsubscribe();
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
 
   return stats;

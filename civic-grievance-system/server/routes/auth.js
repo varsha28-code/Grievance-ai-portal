@@ -87,6 +87,7 @@ router.post('/forgot-password', (req, res) => {
     const { email } = req.body;
     if (!email) return res.status(400).json({ error: 'Email is required' });
 
+    const db = getDB();
     const user = db.prepare('SELECT id, email FROM users WHERE email = ?').get(email.toLowerCase());
     if (!user) {
       // Don't reveal whether email exists
@@ -125,6 +126,7 @@ router.post('/reset-password', (req, res) => {
     if (!token || !newPassword) return res.status(400).json({ error: 'Token and new password are required' });
     if (newPassword.length < 6) return res.status(400).json({ error: 'Password must be at least 6 characters' });
 
+    const db = getDB();
     const record = db.prepare(
       'SELECT * FROM password_resets WHERE token = ? AND used = 0 AND expires_at > datetime("now")'
     ).get(token);

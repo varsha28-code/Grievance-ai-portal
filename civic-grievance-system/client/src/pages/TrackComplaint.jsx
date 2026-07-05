@@ -1,8 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { FiSearch, FiFilter, FiChevronDown, FiMapPin, FiThumbsUp, FiArrowRight } from 'react-icons/fi';
-import { collection, query, where, orderBy, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
 import { fetchComplaints } from '../api';
 
 const STATUS_LABELS = { registered: 'Registered', assigned: 'Assigned', in_progress: 'In Progress', resolved: 'Resolved', reopened: 'Re-opened', verified: 'Verified' };
@@ -19,48 +17,37 @@ export default function TrackComplaint() {
   const [ticketSearch, setTicketSearch] = useState('');
 
   useEffect(() => {
-    setLoading(true);
-    const complaintsRef = collection(db, 'complaints');
-    
-    // Base ordering
-    let q = query(complaintsRef, orderBy('createdAt', 'desc'));
-    
-    // Apply filters (simple ones for now, complex filtering might require more indexes)
-    if (filters.status) q = query(q, where('status', '==', filters.status));
-    if (filters.category) q = query(q, where('category', '==', filters.category));
-    if (filters.priority) q = query(q, where('priority', '==', filters.priority));
+    let active = true;
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      let data = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      // Client-side search and sorting for better responsiveness
-      if (search) {
-        const lowerSearch = search.toLowerCase();
-        data = data.filter(c => 
-          c.title?.toLowerCase().includes(lowerSearch) || 
-          c.description?.toLowerCase().includes(lowerSearch) ||
-          c.address?.toLowerCase().includes(lowerSearch)
-        );
+    async function loadData() {
+      try {
+        const params = {
+          status: filters.status || undefined,
+          category: filters.category || undefined,
+          priority: filters.priority || undefined,
+          search: search || undefined,
+          sort: filters.sort || 'newest',
+        };
+
+        const res = await fetchComplaints(params);
+        if (active) {
+          setComplaints(res.complaints || []);
+          setTotal(res.total || 0);
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Error loading complaints:", error);
+        if (active) setLoading(false);
       }
+    }
 
-      if (filters.sort === 'priority') {
-        const priorityScore = { critical: 4, high: 3, medium: 2, low: 1 };
-        data.sort((a, b) => (priorityScore[b.priority] || 0) - (priorityScore[a.priority] || 0));
-      } else if (filters.sort === 'upvotes') {
-        data.sort((a, b) => b.upvotes - a.upvotes);
-      } else if (filters.sort === 'oldest') {
-        data.sort((a, b) => new Date(a.createdAt) - new Date(b.createdAt));
-      }
+    loadData();
+    const timer = setInterval(loadData, 10000);
 
-      setComplaints(data.slice(0, 50));
-      setTotal(data.length);
-      setLoading(false);
-    }, (error) => {
-      console.error("Track Real-time Error:", error);
-      setLoading(false);
-    });
-
-    return () => unsubscribe();
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, [filters, search]);
 
   const handleSearch = (e) => {

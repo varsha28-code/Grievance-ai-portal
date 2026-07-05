@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
-import { FiHome, FiPlusCircle, FiMap, FiBarChart2, FiSearch, FiUsers, FiMessageCircle, FiMenu, FiX, FiLogOut, FiUser, FiSun, FiMoon } from 'react-icons/fi';
+import { FiHome, FiPlusCircle, FiMap, FiBarChart2, FiSearch, FiUsers, FiMessageCircle, FiMenu, FiX, FiLogOut, FiUser, FiSun, FiMoon, FiBell, FiAlertOctagon, FiCpu } from 'react-icons/fi';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { ThemeProvider, useTheme } from './context/ThemeContext';
 import LandingPage from './pages/LandingPage';
@@ -76,6 +76,8 @@ function AppShell() {
     { path: '/report', label: 'Report Issue', icon: FiPlusCircle },
     { path: '/map', label: 'City Map', icon: FiMap },
     { path: '/track', label: 'Track Complaint', icon: FiSearch },
+    { path: '/community', label: 'Community', icon: FiUsers },
+    { path: '/emergency', label: 'Emergency SOS', icon: FiAlertOctagon },
   ];
 
   const ADMIN_NAV = [
@@ -83,6 +85,8 @@ function AppShell() {
     { path: '/admin', label: 'Admin Panel', icon: FiUsers },
     { path: '/map', label: 'City Map', icon: FiMap },
     { path: '/analytics', label: 'Analytics', icon: FiBarChart2 },
+    { path: '/community', label: 'Community', icon: FiUsers },
+    { path: '/emergency', label: 'Emergency SOS', icon: FiAlertOctagon },
     { path: '/report', label: 'Report Issue', icon: FiPlusCircle },
     { path: '/track', label: 'Track Complaint', icon: FiSearch },
   ];
@@ -172,6 +176,29 @@ function AppShell() {
                           {user?.department && (
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">📌 {user.department}</p>
                           )}
+                        </div>
+                        <div className="p-2 border-b border-gray-100 dark:border-gray-700 space-y-1">
+                          <Link
+                            to="/profile"
+                            onClick={() => setShowUserMenu(false)}
+                            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors font-medium"
+                          >
+                            <FiUser size={16} /> My Profile
+                          </Link>
+                          <Link
+                            to="/notifications"
+                            onClick={() => setShowUserMenu(false)}
+                            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors font-medium"
+                          >
+                            <FiBell size={16} /> Notifications
+                          </Link>
+                          <Link
+                            to="/ai"
+                            onClick={() => setShowUserMenu(false)}
+                            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors font-medium"
+                          >
+                            <FiCpu size={16} /> AI Voice Assistant
+                          </Link>
                         </div>
                         <div className="p-2">
                           <button

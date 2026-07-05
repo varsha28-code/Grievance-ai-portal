@@ -3,8 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { FiArrowLeft, FiThumbsUp, FiCheckCircle, FiXCircle, FiMapPin, FiClock, FiUser, FiPhone, FiMail } from 'react-icons/fi';
 import { MapContainer, TileLayer, Marker } from 'react-leaflet';
 import L from 'leaflet';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { db } from '../firebase';
 import { fetchComplaint, upvoteComplaint, verifyComplaint } from '../api';
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -26,21 +24,22 @@ export default function ComplaintDetail() {
   const [complaint, setComplaint] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const docRef = doc(db, 'complaints', id);
-    const unsubscribe = onSnapshot(docRef, (snapshot) => {
-      if (snapshot.exists()) {
-        setComplaint({ id: snapshot.id, ...snapshot.data() });
-      } else {
-        setComplaint(null);
-      }
-      setLoading(false);
-    }, (error) => {
-      console.error("Detail Real-time Error:", error);
-      setLoading(false);
-    });
+  const loadData = async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const data = await fetchComplaint(id);
+      setComplaint(data);
+    } catch (error) {
+      console.error("Error loading complaint:", error);
+    } finally {
+      if (!silent) setLoading(false);
+    }
+  };
 
-    return () => unsubscribe();
+  useEffect(() => {
+    loadData();
+    const timer = setInterval(() => loadData(true), 10000);
+    return () => clearInterval(timer);
   }, [id]);
 
   const handleUpvote = async () => {

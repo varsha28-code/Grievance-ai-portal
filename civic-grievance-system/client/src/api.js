@@ -1,48 +1,19 @@
-import { 
-  collection, 
-  getDocs, 
-  getDoc, 
-  doc, 
-  addDoc, 
-  updateDoc, 
-  increment, 
-  arrayUnion,
-  query, 
-  where, 
-  orderBy, 
-  limit as firestoreLimit 
-} from 'firebase/firestore';
-import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
-import { db, storage } from './firebase';
-import { classifyComplaint, calculatePriority } from './ai/classifier';
-
 export async function fetchComplaints(params = {}) {
   try {
-    const complaintsRef = collection(db, 'complaints');
-    let q = query(complaintsRef);
+    const queryParams = new URLSearchParams();
+    Object.entries(params).forEach(([key, val]) => {
+      if (val !== undefined && val !== null && val !== '') {
+        queryParams.append(key, val);
+      }
+    });
 
-    if (params.status) {
-      q = query(q, where('status', '==', params.status));
-    }
-    
-    if (params.category) {
-      q = query(q, where('category', '==', params.category));
-    }
-
-    if (params.sort === 'priority') {
-      q = query(q, orderBy('priority', 'desc'));
-    } else {
-      q = query(q, orderBy('createdAt', 'desc'));
-    }
-
-    if (params.limit) {
-      q = query(q, firestoreLimit(parseInt(params.limit)));
-    }
-
-    const snapshot = await getDocs(q);
-    const complaints = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    
-    return { complaints, total: complaints.length };
+    const response = await fetch(`/api/complaints?${queryParams.toString()}`);
+    if (!response.ok) throw new Error('Network response was not ok');
+    const data = await response.json();
+    return {
+      complaints: data.complaints || [],
+      total: data.total || 0
+    };
   } catch (error) {
     console.error("Error fetching complaints:", error);
     return { complaints: [], total: 0 };
@@ -51,12 +22,9 @@ export async function fetchComplaints(params = {}) {
 
 export async function fetchComplaint(id) {
   try {
-    const docRef = doc(db, 'complaints', id);
-    const snapshot = await getDoc(docRef);
-    if (snapshot.exists()) {
-      return { id: snapshot.id, ...snapshot.data() };
-    }
-    return null;
+    const response = await fetch(`/api/complaints/${id}`);
+    if (!response.ok) return null;
+    return await response.json();
   } catch (error) {
     console.error("Error fetching complaint:", error);
     return null;
@@ -65,66 +33,17 @@ export async function fetchComplaint(id) {
 
 export async function createComplaint(formData) {
   try {
-    // Extract data from FormData (passed from ReportIssue.jsx)
-    const title = formData.get('title');
-    const description = formData.get('description');
-    const category = formData.get('category');
-    const address = formData.get('address');
-    const lat = parseFloat(formData.get('latitude'));
-    const lng = parseFloat(formData.get('longitude'));
-    const image = formData.get('image');
-    const userId = formData.get('userId');
+    const response = await fetch('/api/complaints', {
+      method: 'POST',
+      body: formData, // Send as multipart/form-data
+    });
 
-    // 1. AI Classification (Frontend)
-    const classification = classifyComplaint(title, description);
-    const priority = calculatePriority(classification, 0);
-
-    // 2. Upload Image if exists
-    let imageUrl = '';
-    if (image && image.size > 0) {
-      const storageRef = ref(storage, `complaints/${Date.now()}_${image.name}`);
-      const uploadResult = await uploadBytes(storageRef, image);
-      imageUrl = await getDownloadURL(uploadResult.ref);
+    const data = await response.json();
+    if (!response.ok) {
+      throw new Error(data.error || 'Failed to submit complaint');
     }
 
-    // 3. Save to Firestore
-    const ticketId = 'CR-' + Math.random().toString(36).substr(2, 9).toUpperCase();
-    const complaintData = {
-      ticket_id: ticketId,
-      title,
-      description,
-      category: category || classification.category,
-      department: classification.department,
-      priority,
-      status: 'registered',
-      address,
-      latitude: lat,
-      longitude: lng,
-      image_url: imageUrl,
-      upvotes: 0,
-      userId: userId || 'anonymous',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      history: [{
-        status: 'registered',
-        notes: 'Complaint registered.',
-        created_at: new Date().toISOString()
-      }]
-    };
-
-    const docRef = await addDoc(collection(db, 'complaints'), complaintData);
-    
-    // Return structure that ReportIssue expects
-    return { 
-      id: docRef.id, 
-      complaint: { id: docRef.id, ...complaintData },
-      classification: { 
-        category: complaintData.category,
-        confidence: classification.confidence,
-        department: complaintData.department
-      },
-      merged: false // Duplicate detection logic can be added later if needed
-    };
+    return data;
   } catch (error) {
     console.error("Error creating complaint:", error);
     throw error;
@@ -133,20 +52,20 @@ export async function createComplaint(formData) {
 
 export async function updateComplaintStatus(id, status, notes) {
   try {
-    const docRef = doc(db, 'complaints', id);
-    const historyEntry = {
-      status,
-      notes,
-      created_at: new Date().toISOString()
-    };
-    
-    await updateDoc(docRef, {
-      status,
-      updatedAt: new Date().toISOString(),
-      lastNotes: notes,
-      history: arrayUnion(historyEntry)
+    const response = await fetch(`/api/complaints/${id}/status`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ status, notes }),
     });
-    return { success: true };
+
+    if (!response.ok) {
+      const data = await response.json();
+      throw new Error(data.error || 'Failed to update status');
+    }
+
+    return await response.json();
   } catch (error) {
     console.error("Error updating status:", error);
     return { success: false, error: error.message };
@@ -155,11 +74,12 @@ export async function updateComplaintStatus(id, status, notes) {
 
 export async function upvoteComplaint(id) {
   try {
-    const docRef = doc(db, 'complaints', id);
-    await updateDoc(docRef, {
-      upvotes: increment(1)
+    const response = await fetch(`/api/complaints/${id}/upvote`, {
+      method: 'POST',
     });
-    return { success: true };
+
+    if (!response.ok) throw new Error('Failed to upvote');
+    return await response.json();
   } catch (error) {
     console.error("Error upvoting:", error);
     return { success: false };
@@ -168,23 +88,16 @@ export async function upvoteComplaint(id) {
 
 export async function verifyComplaint(id, verified) {
   try {
-    const docRef = doc(db, 'complaints', id);
-    const status = verified ? 'verified' : 'reopened';
-    const notes = verified ? 'Citizen verified the fix.' : 'Citizen reported the issue as still not fixed.';
-    const historyEntry = {
-      status,
-      notes,
-      created_at: new Date().toISOString()
-    };
-
-    await updateDoc(docRef, {
-      status,
-      citizen_verified: verified,
-      updatedAt: new Date().toISOString(),
-      lastNotes: notes,
-      history: arrayUnion(historyEntry)
+    const response = await fetch(`/api/complaints/${id}/verify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ verified }),
     });
-    return { success: true };
+
+    if (!response.ok) throw new Error('Failed to verify resolution');
+    return await response.json();
   } catch (error) {
     console.error("Error verifying:", error);
     return { success: false };
@@ -192,44 +105,71 @@ export async function verifyComplaint(id, verified) {
 }
 
 export async function fetchMapData() {
-  // Same as fetching all complaints but specifically for the map
-  const res = await fetchComplaints({ limit: 100 });
-  return res.complaints;
+  try {
+    const response = await fetch('/api/complaints/map/all');
+    if (!response.ok) throw new Error('Failed to fetch map data');
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching map data:", error);
+    return [];
+  }
 }
 
 export async function fetchDashboardStats() {
-  // For the legacy dashboard component that still uses this function
-  const res = await fetchComplaints();
-  const complaints = res.complaints;
-  
-  const stats = {
-    total: complaints.length,
-    registered: complaints.filter(c => c.status === 'registered').length,
-    assigned: complaints.filter(c => c.status === 'assigned').length,
-    in_progress: complaints.filter(c => c.status === 'in_progress').length,
-    resolved: complaints.filter(c => c.status === 'resolved').length,
-    critical: complaints.filter(c => c.priority === 'critical').length,
-  };
-  
-  return stats;
+  try {
+    const response = await fetch('/api/analytics/dashboard');
+    if (!response.ok) throw new Error('Failed to fetch dashboard stats');
+    const data = await response.json();
+    return data.overview; // Returns overview stats { total, registered, assigned, inProgress, resolved, critical }
+  } catch (error) {
+    console.error("Error fetching dashboard stats:", error);
+    return { total: 0, registered: 0, assigned: 0, inProgress: 0, resolved: 0, critical: 0 };
+  }
 }
 
 export async function fetchOfficerPerformance() {
-  // Mocking officer performance from Firestore data would be complex to aggregate 
-  // without a server, but for now we'll return an empty array or basic aggregation.
-  // In a real app, you'd query the users collection where role=officer.
-  return [];
+  try {
+    const response = await fetch('/api/analytics/officers');
+    if (!response.ok) throw new Error('Failed to fetch officer stats');
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching officer stats:", error);
+    return [];
+  }
 }
 
 export async function fetchHotspots() {
-  // Simple aggregation for UI hotspots
-  return [];
+  try {
+    const response = await fetch('/api/analytics/hotspots');
+    if (!response.ok) throw new Error('Failed to fetch hotspots');
+    return await response.json();
+  } catch (error) {
+    console.error("Error fetching hotspots:", error);
+    return [];
+  }
 }
 
 export async function sendChatMessage(message) {
-  // Keeping this as a mock for now as it's pure logic
-  return { 
-    reply: "I've analyzed your message. How can I help you regarding civic issues today?",
-    suggestions: ["Report Garbage", "Check Pothole Status", "Contact Admin"]
-  };
+  try {
+    const response = await fetch('/api/chatbot', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ message }),
+    });
+
+    if (!response.ok) throw new Error('Failed to talk to chat assistant');
+    const data = await response.json();
+    return {
+      reply: data.response,
+      suggestions: data.suggestions || []
+    };
+  } catch (error) {
+    console.error("Error sending message to chatbot:", error);
+    return {
+      reply: "I'm experiencing connectivity issues right now. Please try again in a moment.",
+      suggestions: ["Report Issue", "Track Complaint"]
+    };
+  }
 }

@@ -1,57 +1,37 @@
 import { useState, useEffect } from 'react';
-import { collection, onSnapshot, query, where } from 'firebase/firestore';
-import { db } from '../firebase';
 
 export function useFirebaseOfficerStats() {
   const [officers, setOfficers] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // 1. Get all officers from users collection
-    const usersRef = collection(db, 'users');
-    const officerQuery = query(usersRef, where('role', '==', 'officer'));
+    let active = true;
 
-    const unsubscribeUsers = onSnapshot(officerQuery, (userSnapshot) => {
-      const officerProfiles = userSnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      // 2. For each officer, we need their complaints. 
-      // Instead of N queries, we'll listen to ALL complaints and aggregate on-client
-      const complaintsRef = collection(db, 'complaints');
-      
-      const unsubscribeComplaints = onSnapshot(complaintsRef, (complaintSnapshot) => {
-        const allComplaints = complaintSnapshot.docs.map(doc => doc.data());
+    async function loadOfficerStats() {
+      try {
+        const response = await fetch('/api/analytics/officers');
+        if (!response.ok) throw new Error('Failed to fetch officer stats');
+        const data = await response.json();
         
-        const updatedOfficers = officerProfiles.map(officer => {
-          const officerComplaints = allComplaints.filter(c => c.assignedOfficer === officer.name || c.assignedOfficerId === officer.id);
-          const resolved = officerComplaints.filter(c => c.status === 'resolved').length;
-          const pending = officerComplaints.filter(c => !['resolved', 'verified'].includes(c.status)).length;
-          
-          return {
-            ...officer,
-            total_assigned: officerComplaints.length,
-            resolved,
-            pending,
-            avg_resolution_days: 0 // In a production app, we'd calculate this properly
-          };
-        });
+        if (active) {
+          setOfficers(data || []);
+          setIsLoading(false);
+        }
+      } catch (error) {
+        console.error("Error loading officer stats:", error);
+        if (active) {
+          setIsLoading(false);
+        }
+      }
+    }
 
-        setOfficers(updatedOfficers);
-        setIsLoading(false);
-      }, (error) => {
-        console.error("Complaints Stats Error:", error);
-        setIsLoading(false);
-      });
+    loadOfficerStats();
+    const timer = setInterval(loadOfficerStats, 10000);
 
-      return () => unsubscribeComplaints();
-    }, (error) => {
-      console.error("Officer Profiles Error:", error);
-      setIsLoading(false);
-    });
-
-    return () => unsubscribeUsers();
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, []);
 
   return { officers, isLoading };

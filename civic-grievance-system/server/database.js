@@ -129,6 +129,15 @@ function initDB() {
     );
     console.log('✅ Added demo admin account');
   }
+
+  // Ensure demo officer exists
+  const demoOfficer = db.prepare("SELECT id FROM users WHERE email = 'rajesh@municipal.gov'").get();
+  if (!demoOfficer) {
+    db.prepare('INSERT INTO users (id, name, email, role, password, department) VALUES (?, ?, ?, ?, ?, ?)').run(
+      uuidv4(), 'Rajesh Kumar', 'rajesh@municipal.gov', 'officer', hashPassword('officer123'), 'Roads & Infrastructure'
+    );
+    console.log('✅ Added demo officer account');
+  }
 }
 
 module.exports = { getDB, initDB, hashPassword };

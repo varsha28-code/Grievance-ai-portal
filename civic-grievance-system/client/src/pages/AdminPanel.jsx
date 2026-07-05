@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { FiRefreshCw, FiArrowRight } from 'react-icons/fi';
+import { FiRefreshCw, FiArrowRight, FiShield, FiBell } from 'react-icons/fi';
 import { collection, query, where, orderBy, limit, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { updateComplaintStatus } from '../api';
@@ -21,6 +21,11 @@ export default function AdminPanel() {
 
   const [notifications, setNotifications] = useState([]);
   const isInitialLoad = React.useRef(true);
+
+  const loadData = () => {
+    setLoading(true);
+    setTimeout(() => setLoading(false), 500);
+  };
 
   useEffect(() => {
     const complaintsRef = collection(db, 'complaints');

@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiMic, FiMessageCircle, FiX, FiSend, FiZap, FiCpu, FiActivity } from 'react-icons/fi';
+import { FiMic, FiMessageCircle, FiX, FiSend, FiZap, FiCpu, FiActivity, FiVolume2, FiVolumeX } from 'react-icons/fi';
+import { sendChatMessage } from '../api';
 
 export default function AIAssistantPage() {
   const [isListening, setIsListening] = useState(false);
@@ -8,20 +9,108 @@ export default function AIAssistantPage() {
     { role: 'bot', text: "Hello! I'm your Voice4City AI Assistant. You can speak naturally to report issues, track complaints, or ask about city services. How can I assist you today?" }
   ]);
   const [inputText, setInputText] = useState('');
+  const [isSpeaking, setIsSpeaking] = useState(true);
+  const [sending, setSending] = useState(false);
+  const recognitionRef = useRef(null);
+  const chatEndRef = useRef(null);
+
+  // Initialize Speech Recognition
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'en-IN';
+      recognition.continuous = false;
+      recognition.interimResults = false;
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+      recognition.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript) {
+          submitQuery(transcript);
+        }
+      };
+      recognition.onerror = (err) => {
+        console.error("Speech recognition error:", err);
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+    }
+
+    return () => {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, [isSpeaking]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
+
+  const speakText = (text) => {
+    if (!isSpeaking || !('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      // Remove simple markdown markers before speaking
+      const cleaned = text
+        .replace(/[*_#`~]/g, '')
+        .replace(/•/g, ', ')
+        .trim();
+      const utterance = new SpeechSynthesisUtterance(cleaned);
+      utterance.lang = 'en-IN';
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.error("Speech synthesis failed:", e);
+    }
+  };
 
   const toggleListening = () => {
-    setIsListening(!isListening);
-    // In a real app, this would trigger Web Speech API
+    if (!recognitionRef.current) {
+      alert("Speech recognition is not supported in this browser. Please type your query.");
+      return;
+    }
+
+    if (isListening) {
+      recognitionRef.current.stop();
+    } else {
+      if (window.speechSynthesis) {
+        window.speechSynthesis.cancel();
+      }
+      recognitionRef.current.start();
+    }
+  };
+
+  const submitQuery = async (queryText) => {
+    if (!queryText.trim()) return;
+    
+    // Add user message
+    setMessages(prev => [...prev, { role: 'user', text: queryText }]);
+    setInputText('');
+    setSending(true);
+
+    try {
+      const data = await sendChatMessage(queryText);
+      const botResponse = data.reply;
+      
+      setMessages(prev => [...prev, { role: 'bot', text: botResponse }]);
+      speakText(botResponse);
+    } catch (error) {
+      console.error("Error communicating with AI chatbot:", error);
+      const errMsg = "I encountered an error connecting to local city service modules. Please try again.";
+      setMessages(prev => [...prev, { role: 'bot', text: errMsg }]);
+      speakText(errMsg);
+    } finally {
+      setSending(false);
+    }
   };
 
   const handleSend = () => {
-    if (!inputText.trim()) return;
-    setMessages([...messages, { role: 'user', text: inputText }]);
-    setInputText('');
-    // Mock bot response
-    setTimeout(() => {
-      setMessages(prev => [...prev, { role: 'bot', text: "I've understood your query. I'm processing that information right now..." }]);
-    }, 1000);
+    if (inputText.trim()) {
+      submitQuery(inputText);
+    }
   };
 
   return (
@@ -41,18 +130,32 @@ export default function AIAssistantPage() {
             <p className="text-blue-400 text-[10px] font-bold uppercase tracking-widest mt-1">Immersive Mode</p>
           </div>
         </div>
-        <button 
-          onClick={() => window.history.back()}
-          className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-colors"
-        >
-          <FiX size={20} />
-        </button>
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={() => {
+              const speakVal = !isSpeaking;
+              setIsSpeaking(speakVal);
+              if (!speakVal && window.speechSynthesis) window.speechSynthesis.cancel();
+            }}
+            className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-colors"
+            title={isSpeaking ? "Mute responses" : "Unmute responses"}
+          >
+            {isSpeaking ? <FiVolume2 size={20} /> : <FiVolumeX size={20} />}
+          </button>
+          <button 
+            onClick={() => window.history.back()}
+            className="w-10 h-10 rounded-full bg-white/5 hover:bg-white/10 text-white flex items-center justify-center transition-colors"
+            title="Go Back"
+          >
+            <FiX size={20} />
+          </button>
+        </div>
       </header>
 
       {/* Visualizer / Interaction Area */}
-      <main className="flex-1 w-full max-w-4xl px-6 flex flex-col justify-center items-center relative gap-12">
+      <main className="flex-1 w-full max-w-4xl px-6 flex flex-col justify-center items-center relative gap-8 min-h-0">
         <motion.div 
-          className="relative"
+          className="relative mt-4 shrink-0"
           animate={isListening ? { scale: [1, 1.1, 1] } : {}}
           transition={{ repeat: Infinity, duration: 2 }}
         >
@@ -78,28 +181,36 @@ export default function AIAssistantPage() {
         </motion.div>
 
         {/* Message Display */}
-        <div className="w-full max-h-[30vh] overflow-y-auto space-y-4 px-4 scrollbar-hide">
+        <div className="w-full flex-1 overflow-y-auto space-y-4 px-4 scrollbar-hide py-4 min-h-0">
           <AnimatePresence>
-            {messages.slice(-2).map((msg, i) => (
+            {messages.map((msg, i) => (
               <motion.div
                 key={i}
-                initial={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                className={`p-6 rounded-3xl max-w-xl mx-auto backdrop-blur-md
-                  ${msg.role === 'bot' ? 'bg-white/10 border border-white/10 text-blue-100' : 'bg-blue-600 text-white ml-auto'}`}
+                className={`p-6 rounded-3xl max-w-xl mx-auto backdrop-blur-md border ${
+                  msg.role === 'bot' 
+                    ? 'bg-white/5 border-white/5 text-blue-100' 
+                    : 'bg-blue-600 border-blue-600 text-white ml-auto'
+                }`}
               >
-                <p className="text-center font-medium leading-relaxed uppercase text-xs tracking-wider opacity-60 mb-2">
+                <p className={`font-semibold leading-relaxed uppercase text-[10px] tracking-wider opacity-60 mb-2 ${
+                  msg.role === 'bot' ? 'text-left' : 'text-right'
+                }`}>
                   {msg.role === 'bot' ? 'VoiceBot AI' : 'You'}
                 </p>
-                <p className="text-center text-lg md:text-xl font-bold">{msg.text}</p>
+                <p className="text-left text-sm md:text-base font-bold whitespace-pre-line leading-relaxed">
+                  {msg.text}
+                </p>
               </motion.div>
             ))}
           </AnimatePresence>
+          <div ref={chatEndRef} />
         </div>
       </main>
 
       {/* Bottom Interface */}
-      <footer className="w-full max-w-3xl p-8 z-10">
+      <footer className="w-full max-w-3xl p-6 z-10 shrink-0">
         <div className="bg-white/5 border border-white/10 p-2 rounded-[2rem] flex items-center shadow-2xl backdrop-blur-xl">
           <div className="flex items-center gap-4 px-4">
             <FiMessageCircle className="text-blue-400" />
@@ -109,23 +220,25 @@ export default function AIAssistantPage() {
             value={inputText}
             onChange={e => setInputText(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && handleSend()}
-            placeholder="Type your civic grievance..." 
-            className="flex-1 bg-transparent border-none outline-none text-white py-4 font-medium placeholder-white/30"
+            placeholder="Type your query or click mic..." 
+            className="flex-1 bg-transparent border-none outline-none text-white py-3 font-medium placeholder-white/30 text-sm focus:ring-0"
+            disabled={sending}
           />
           <button 
             onClick={handleSend}
-            className="w-12 h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl flex items-center justify-center transition-all shadow-lg active:scale-95"
+            disabled={sending || !inputText.trim()}
+            className="w-12 h-12 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl flex items-center justify-center transition-all shadow-lg active:scale-95 disabled:opacity-50"
           >
             <FiSend />
           </button>
         </div>
         
-        <div className="flex justify-center gap-8 mt-6">
-          <div className="flex items-center gap-2 text-[10px] font-bold text-white/40 uppercase tracking-widest">
-            <FiCpu /> Neural Core Active
+        <div className="flex justify-center gap-8 mt-4">
+          <div className="flex items-center gap-2 text-[9px] font-bold text-white/40 uppercase tracking-widest">
+            <FiCpu /> SQLite Chat Core Active
           </div>
-          <div className="flex items-center gap-2 text-[10px] font-bold text-white/40 uppercase tracking-widest">
-            <FiActivity /> 98% Accuracy
+          <div className="flex items-center gap-2 text-[9px] font-bold text-white/40 uppercase tracking-widest">
+            <FiActivity /> Live Recognition
           </div>
         </div>
       </footer>

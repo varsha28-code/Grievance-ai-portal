@@ -13,12 +13,12 @@ build/
 .env.*.local
 
 # Database files (local SQLite DB)
-data/*.db
-data/*.db-shm
-data/*.db-wal
+**/data/*.db
+**/data/*.db-shm
+**/data/*.db-wal
 
 # Uploaded files (local storage)
-uploads/
+**/uploads/
 
 # Logs
 *.log
